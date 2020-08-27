@@ -1,40 +1,55 @@
-import os
-import argparse
+import os, argparse
+'''
+Tensorflow는 gpu를 지정할 때, 몇 장이나 가지고 있는지 조회해보고 배정하게 되는데, 이 조회 자체를 막아버리는 방식이다.
+
+# GPU를 아예 못 보게 하려면: 
+os.environ["CUDA_VISIBLE_DEVICES"]='' 
+# GPU 0만 보게 하려면: 
+os.environ["CUDA_VISIBLE_DEVICES"]='0' 
+# GPU 1만 보게 하려면: 
+os.environ["CUDA_VISIBLE_DEVICES"]='0' 
+# GPU 0과 1을 보게 하려면: 
+os.environ["CUDA_VISIBLE_DEVICES"]='0,1'
+
+'''
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+
 import torch
 
 import source.neuralnet as nn
 import source.datamanager as dman
 import source.solver as solver
 
-
 def main():
-    
-    dataset = dman.Dataset(normalize=FLAGS.data_norm)
 
-    if (not(torch.cuda.is_available())):
+    dataset = dman.Dataset(normalize=FLAGS.datnorm)
+
+    if (not(torch.cuda.is_available())): 
         FLAGS.ngpu = 0
     device = torch.device("cuda" if (torch.cuda.is_available() and FLAGS.ngpu > 0) else "cpu")
 
-    neuralnet = nn.NeuralNet(height=dataset.height,
-                             width=dataset.width,
-                             batch_size=FLAGS.batch)
+    neuralnet = nn.NeuralNet(height=dataset.height, 
+                             width=dataset.width, 
+                             channel=dataset.channel, 
+                             device=device, 
+                             ngpu=FLAGS.ngpu, 
+                             ksize=FLAGS.ksize, 
+                             z_dim=FLAGS.z_dim, 
+                             learning_rate=FLAGS.lr)
 
     solver.training(neuralnet=neuralnet, 
-                    dataset=dataset,
-                    epochs=FLAGS.epoch,
-                    batch_size=FLAGS,batch)
-
-    solver.test(neuralnet=neuralnet,
-                dataset=dataset)
-
+                    dataset=dataset, 
+                    epochs=FLAGS.epoch, 
+                    batch_size=FLAGS.batch)
+                    
+    solver.test(neuralnet=neuralnet, dataset=dataset)
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-
-    parser.add_argument('--n_gpu', type=int, default=1, help='-')
-    parser.add_argument('--data_norm', type=bool, default=True, help='Data normalization')
-    parser.add_argument('--k_size', type=int, default=3, help='kernel size for constructiong Neural Network')
+    parser.add_argument('--ngpu', type=int, default=1, help='-')
+    parser.add_argument('--datnorm', type=bool, default=True, help='Data normalization')
+    parser.add_argument('--ksize', type=int, default=3, help='kernel size for constructing Neural Network')
     parser.add_argument('--z_dim', type=int, default=128, help='Dimension of latent vector')
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for training')
     parser.add_argument('--epoch', type=int, default=100, help='Training epoch')

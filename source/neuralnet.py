@@ -2,93 +2,98 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-
 class NeuralNet(object):
 
     def __init__(self,
                  height,
-                 width,
-                 channel,
-                 device,
-                 n_gpu,
-                 k_size,
-                 z_dim,
-                 lr=1e-3)
-        self.height = height
-        self.width =  width
-        self.channel =  channel
-        self.device = device
-        self.n_gpu = n_gpu
-        self.k_size = k_size
-        self.z_dim = z_dim,
-        self.lr = lr
+                 width, 
+                 channel, 
+                 device, 
+                 ngpu, 
+                 ksize, 
+                 z_dim, 
+                 learning_rate=1e-3):
 
-        self.encoder = \
-            Encoder(height=self.height, width=self.width, channel=self.channel, \
-                    n_gpu=self.n_gpu, k_size=self.k_size, z_dim=self.z_dim).to(self.device)
+        self.height = height 
+        self.width = width 
+        self.channel = channel
+        self.device = device 
+        self.ngpu = ngpu
+        self.ksize = ksize
+        self.z_dim = z_dim
+        self.learning_rate = learning_rate
+        
+        self.encoder = Encoder(height=self.height, 
+                               width=self.width, 
+                               channel=self.channel,
+                               ngpu=self.ngpu, 
+                               ksize=self.ksize, 
+                               z_dim=self.z_dim
+                               ).to(self.device)
 
-        self.decoder = \
-            Decoder(height=self.height, width=self.width, channel=self.channel, \
-                    n_gpu=self.n_gpu, k_size=self.k_size, z_dim=self.z_dim).to(self.device)
+        self.decoder = Decoder(height=self.height, 
+                               width=self.width, 
+                               channel=self.channel,
+                               ngpu=self.ngpu, 
+                               ksize=self.ksize, 
+                               z_dim=self.z_dim
+                               ).to(self.device)
 
         self.models = [self.encoder, self.decoder]
 
         for idx_m, model in enumerate(self.models):
-            if(self.device.type == 'cuda') and (self.models[idx_m].n_gpu > 0):
-                self.models[idx_m] = nn.DataParallel(self.models[idx_m], list(range(self.models[idx_m].n_gpu)))
+            if(self.device.type == 'cuda') and (self.models[idx_m].ngpu > 0):
+                self.models[idx_m] = nn.DataParallel(self.models[idx_m], list(range(self.models[idx_m].ngpu)))
 
         self.num_params = 0
         for idx_m, model in enumerate(self.models):
             for p in model.parameters():
                 self.num_params += p.numel()
             print(model)
-        print("The number of parameters: %d" % (self.num_params))
+        print("The number of parameters: %d" %(self.num_params))
 
         self.params = list(self.encoder.parameters()) + list(self.decoder.parameters())
         self.optimizer = optim.Adam(self.params, lr=self.learning_rate)
 
-
 class Flatten(nn.Module):
-
     def forward(self, input):
         return input.view(input.size(0), -1)
 
-
 class Encoder(nn.Module):
 
-    def __init__(self,
-                 height,
-                 width,
-                 channel,
-                 n_gpu,
-                 k_size,
+    def __init__(self, 
+                 height, 
+                 width, 
+                 channel, 
+                 ngpu, 
+                 ksize, 
                  z_dim):
-        
+
         super().__init__()
 
         self.height = height
         self.width = width
         self.channel = channel
-        self.n_gpu = n_gpu
-        self.k_size = k_size
+        self.ngpu = ngpu
+        self.ksize = ksize
         self.z_dim = z_dim
 
         self.en_conv = nn.Sequential(
-            nn.Conv2d(in_channels = self.channel, out_channels=16, kernel_size=self.k_size, stride=1, padding = self.k_size//2),
+            nn.Conv2d(in_channels=self.channel, out_channels=16, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
-            nn.Conv2d(in_channels = 16, out_channels=16, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
-            nn.ELU(),
-            nn.MaxPool2d(2),
-
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
-            nn.ELU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
             nn.MaxPool2d(2),
 
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
+            nn.ELU(),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
+            nn.ELU(),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU()
         )
 
@@ -96,14 +101,14 @@ class Encoder(nn.Module):
             Flatten(),
             nn.Linear((self.height//(2**2))*(self.width//(2**2))*self.channel*64, 512),
             nn.ELU(),
-            nn.Linear(512, self.z_dim*2),
+            nn.Linear(512, self.z_dim*2)
         )
 
     def split_z(self, z):
         z_mu = z[:, :self.z_dim]
         z_sigma = z[:, self.z_dim:]
 
-        return z_mu, z_simga
+        return z_mu, z_sigma
 
     def sample_z(self, mu, sigma):
         epsilon = torch.randn_like(mu)
@@ -119,55 +124,52 @@ class Encoder(nn.Module):
 
         return z_enc, z_mu, z_sigma
 
-
 class Decoder(nn.Module):
 
-    def __init__(self,
-                 height,
-                 width,
-                 channel,
-                 n_gpu,
-                 k_size,
+    def __init__(self, 
+                 height, 
+                 width, 
+                 channel, 
+                 ngpu, 
+                 ksize, 
                  z_dim):
-        
+
         super().__init__()
 
-        self.height = height
+        self.height = height 
         self.width = width
         self.channel = channel
-        self.n_gpu = n_gpu
-        self.k_size = k_size
+        self.ngpu = ngpu
+        self.ksize = ksize
         self.z_dim = z_dim
 
         self.de_dense = nn.Sequential(
             nn.Linear(self.z_dim, 512),
             nn.ELU(),
-            nn.Linear(512, (self.height//(2**2)) * (self.width//(2**2)) * self.channel*64),
+            nn.Linear(512, (self.height//(2**2))*(self.width//(2**2))*self.channel*64),
             nn.ELU()
         )
 
         self.de_conv = nn.Sequential(
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
-            nn.Conv2d(in_chammels=64, out_channels=64, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
-            nn.ELU(),
-
-            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=self.k_size+1, stride=2, padding=1),
-            nn.ELU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
 
-            nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=self.k_size+1, stride=2, padding=1),
+            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=self.ksize+1, stride=2, padding=1),
             nn.ELU(),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=self.k_size, stride=1, padding=self.k_size//2),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
             nn.ELU(),
-            nn.Conv2d(in_channels=16, out_channels=self.channel, kernel_size=self.k_size,  stride=1, padding=self.k_size//2),
-            nn.Sigmoid(),
+
+            nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=self.ksize+1, stride=2, padding=1),
+            nn.ELU(),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
+            nn.ELU(),
+            nn.Conv2d(in_channels=16, out_channels=self.channel, kernel_size=self.ksize, stride=1, padding=self.ksize//2),
+            nn.Sigmoid()
         )
 
-
     def forward(self, input):
-
         denseout = self.de_dense(input)
         denseout_res = denseout.view(denseout.size(0), 64, (self.height//(2**2)), (self.height//(2**2)))
         x_hat = self.de_conv(denseout_res)
